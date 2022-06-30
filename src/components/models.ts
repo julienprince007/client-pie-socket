@@ -11,4 +11,5 @@ export interface Chat {
   message: string;
   room_id: number;
   user_id: number;
+  type?: string;
 }

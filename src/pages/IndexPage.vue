@@ -27,14 +27,15 @@
     <div
       class="row justify-beetwen"
       style="max-width: 500px"
+      :style="userInfos && 'cursor: pointer'"
     >
       <q-card
         class="my-card q-ma-md"
-        style="max-height: 50px; cursor: pointer"
+        style="max-height: 50px"
         :style="roomId == room.id ? 'background: #adeaff' : ''"
         v-for="room in rooms"
         :key="room.id"
-        @click="findChatRooms(room.id)"
+        @click="userInfos && findChatRooms(room.id)"
       >
         <q-card-section>
           {{ room.name }}
@@ -43,8 +44,7 @@
     </div>
     <div class="q-mt-lg">
       <div
-        class="q-pa-md row justify-center q-ma-sm"
-        style="border: 2px solid #2196f3; border-radius: 5px"
+        class="q-pa-md row justify-center q-ma-sm message_area"
         v-if="roomId && userInfos"
       >
         <div style="width: 100%; max-width: 400px">
@@ -54,33 +54,87 @@
             :name="chat.user_id === userInfos.id ? 'me' : 'other user'"
             :text="[chat.message]"
             :sent="chat.user_id === userInfos.id"
+            :stamp="chat.type ? `event: ${chat?.type}` : ''"
           />
         </div>
       </div>
     </div>
-    <div
-      class="row justify-center"
-      v-if="roomId"
-    >
-      <div class="q-ml-md">
-        <q-input
-          v-model="message"
-          outlined
-          placeholder="new message"
-          dense
-        >
-          <template v-slot:append>
-            <q-btn
-              round
-              dense
-              flat
-              :disable="!message"
-              @click="sendMessage"
-              :loading="onSend"
-              icon="send"
-            />
-          </template>
-        </q-input>
+
+    <div class="row">
+      <div
+        class="row justify-center"
+        v-if="roomId"
+      >
+        <div class="q-ml-md q-mt-sm">
+          <q-input
+            v-model="message"
+            outlined
+            placeholder="new message for talk"
+            dense
+          >
+            <template v-slot:append>
+              <q-btn
+                round
+                dense
+                flat
+                :disable="!message"
+                @click="sendMessage"
+                :loading="onSend && message.length > 0"
+                icon="send"
+              />
+            </template>
+          </q-input>
+        </div>
+      </div>
+      <div
+        class="row justify-center"
+        v-if="roomId"
+      >
+        <div class="q-ml-md q-mt-sm">
+          <q-input
+            v-model="report"
+            outlined
+            placeholder="new message for report"
+            dense
+          >
+            <template v-slot:append>
+              <q-btn
+                round
+                dense
+                flat
+                :disable="!report"
+                @click="sendMessage"
+                :loading="onSend && report.length > 0"
+                icon="send"
+              />
+            </template>
+          </q-input>
+        </div>
+      </div>
+      <div
+        class="row justify-center"
+        v-if="roomId"
+      >
+        <div class="q-ml-md q-mt-sm">
+          <q-input
+            v-model="issue"
+            outlined
+            placeholder="new message for issue"
+            dense
+          >
+            <template v-slot:append>
+              <q-btn
+                round
+                dense
+                flat
+                :disable="!issue"
+                @click="sendMessage"
+                :loading="onSend && issue.length > 0"
+                icon="send"
+              />
+            </template>
+          </q-input>
+        </div>
       </div>
     </div>
 
@@ -126,6 +180,8 @@ export default defineComponent({
     const userInfos = ref<User>();
     const roomId = ref();
     const message = ref('');
+    const issue = ref('');
+    const report = ref('');
     const rooms = ref<Room[]>([]);
     const chatRoom = ref<Chat[]>([]);
     const onSend = ref(false)
@@ -159,16 +215,26 @@ export default defineComponent({
 
     const sendMessage = () => {
       if (userInfos.value || roomId.value) {
+        let type = ''
+        if (message.value) {
+          type = 'talks'
+        } if (issue.value) {
+          type = 'issue'
+        }
+        if (report.value) {
+          type = 'report'
+        }
+
         onSend.value = true
         api
           .post(`rooms/${roomId.value}/room_messages`, {
             'user_id': userInfos.value?.id,
             'room_id': roomId.value,
-            'message': message.value
+            'message': message.value || issue.value || report.value,
+            'type': type
           })
-          .then(({ data }) => {
-            message.value = ''
-            chatRoom.value.push(data);
+          .then(() => {
+            resetInputs()
             onSend.value = false
           })
           .catch(({ response: { data } }) => {
@@ -180,6 +246,7 @@ export default defineComponent({
               });
             }
             onSend.value = false
+            resetInputs()
           });
 
       } else {
@@ -190,6 +257,12 @@ export default defineComponent({
         });
       }
     };
+
+    const resetInputs = () => {
+      message.value = ''
+      issue.value = ''
+      report.value = ''
+    }
 
     const findRooms = () => {
       api
@@ -267,10 +340,14 @@ export default defineComponent({
 
     const subscribe = async (channelId: number) => {
       let channel = await piesocket.subscribe(channelId);
-      channel.listen('new-message', ({ message }: { message: Chat }) => {
-        if (roomId.value === message.room_id && userInfos.value?.id !== message.user_id) {
-          chatRoom.value.push(message)
-        }
+      channel.listen('issue', ({ message }: { message: Chat }) => {
+        if (roomId.value === message.room_id) chatRoom.value.push({ ...message, type: 'issue' })
+      });
+      channel.listen('report', ({ message }: { message: Chat }) => {
+        if (roomId.value === message.room_id) chatRoom.value.push({ ...message, type: 'report' })
+      });
+      channel.listen('talks', ({ message }: { message: Chat }) => {
+        if (roomId.value === message.room_id) chatRoom.value.push({ ...message, type: 'talks' })
       });
     }
 
@@ -292,6 +369,8 @@ export default defineComponent({
       chatRoom,
       message,
       onSend,
+      issue,
+      report,
       addName,
       sendMessage,
       createRoom,
@@ -300,3 +379,9 @@ export default defineComponent({
   },
 });
 </script>
+<style>
+.message_area {
+  border: 1px solid #c9c9c9;
+  border-radius: 5px
+}
+</style>
